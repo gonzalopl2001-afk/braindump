@@ -1,5 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
@@ -8,12 +14,14 @@ const supabase = createClient(
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { Body, From } = req.body;
+  const message = req.body?.message;
+  if (!message || !message.text) return res.status(200).end();
 
-  if (!Body) return res.status(400).end();
+  const chatId = message.chat.id;
+  const text = message.text;
+  const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 
   try {
-    // Clasificar con Groq
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -25,14 +33,14 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'system',
-            content: `Eres un asistente de organización personal. El usuario te manda notas y pensamientos por WhatsApp.
+            content: `Eres un asistente de organización personal. El usuario te manda notas y pensamientos.
 Tu tarea es clasificar el mensaje en UNA o DOS etiquetas de esta lista: compras, ocio, proyectos, salud, trabajo, personal, otro.
-Responde SOLO con JSON, sin explicaciones:
+Responde SOLO con JSON sin explicaciones:
 {"etiquetas": ["etiqueta1"], "resumen": "resumen breve en una frase"}`
           },
           {
             role: 'user',
-            content: Body
+            content: text
           }
         ]
       })
@@ -40,31 +48,39 @@ Responde SOLO con JSON, sin explicaciones:
 
     const groqData = await groqRes.json();
     const raw = groqData.choices[0].message.content;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
 
-    // Guardar en Supabase
     await supabase.from('notas').insert({
-      mensaje: Body,
+      mensaje: text,
       etiquetas: parsed.etiquetas,
       resumen: parsed.resumen,
-      telefono: From
+      telefono: String(chatId)
     });
 
-    // Responder a WhatsApp
     const reply = `✅ Apuntado como *${parsed.etiquetas.join(', ')}*\n_${parsed.resumen}_`;
 
-    res.setHeader('Content-Type', 'text/xml');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${reply}</Message>
-</Response>`);
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: reply,
+        parse_mode: 'Markdown'
+      })
+    });
+
+    res.status(200).end();
 
   } catch (err) {
     console.error(err);
-    res.setHeader('Content-Type', 'text/xml');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>Error al procesar tu nota. Inténtalo de nuevo.</Message>
-</Response>`);
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: '❌ Error al procesar tu nota. Inténtalo de nuevo.'
+      })
+    });
+    res.status(200).end();
   }
 }
