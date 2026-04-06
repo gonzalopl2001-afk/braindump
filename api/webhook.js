@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   let body = req.body;
@@ -45,7 +45,6 @@ Responde SOLO con JSON: {"etiquetas": ["etiqueta1"], "resumen": "frase breve"}`
     const raw = groqData.choices[0].message.content;
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
 
-    // Guardar en Supabase via REST
     await fetch(`${process.env.SUPABASE_URL}/rest/v1/notas`, {
       method: 'POST',
       headers: {
@@ -68,10 +67,6 @@ Responde SOLO con JSON: {"etiquetas": ["etiqueta1"], "resumen": "frase breve"}`
   } catch (err) {
     console.error(err);
     await sendMessage('❌ Error al procesar tu nota. Inténtalo de nuevo.');
-    res.status(200).end();
-  }
-}
-    });
     res.status(200).end();
   }
 }
