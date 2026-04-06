@@ -47,6 +47,7 @@ Responde SOLO con JSON sin explicaciones:
     });
 
     const groqData = await groqRes.json();
+    console.log('GROQ RESPONSE:', JSON.stringify(groqData));
     const raw = groqData.choices[0].message.content;
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
 
